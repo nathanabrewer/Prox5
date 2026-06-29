@@ -1,0 +1,21 @@
+# Build
+/build
+/app/build
+.gradle
+
+# Local config
+local.properties
+
+# Signing secrets — never commit
+keystore.properties
+*.keystore
+*.jks
+
+# Generated APKs at repo root
+/android-proxy-debug.apk
+/android-proxy-release.apk
+
+# IDE
+.idea
+*.iml
+.DS_Store
