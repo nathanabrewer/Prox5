@@ -1,0 +1,126 @@
+name: Release APK
+
+# Builds an installable Prox5 APK and publishes it.
+#
+# Triggers:
+#   - push of a tag matching v*   -> builds + creates a GitHub Release with the APK attached
+#   - workflow_dispatch (manual)  -> builds + uploads the APK as a workflow artifact
+#   - pull_request to main        -> build-only sanity check (uploads artifact, no release)
+#
+# Signing strategy (see docs/RELEASING.md):
+#   - If the secrets KEYSTORE_BASE64 / KEYSTORE_PASSWORD / KEY_ALIAS / KEY_PASSWORD are
+#     present, the keystore is decoded, keystore.properties is written, and a SIGNED
+#     release APK is built (app/build/outputs/apk/release/app-release.apk).
+#   - If they are absent, a DEBUG APK is built instead (app/build/outputs/apk/debug/app-debug.apk).
+#     A debug APK is signed with the standard Android debug key, so it is still installable
+#     by sideloading. There is ALWAYS an installable artifact.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle (with caching)
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Configure signing (only if all keystore secrets are present)
+        id: signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ] && [ -n "$KEYSTORE_PASSWORD" ] && [ -n "$KEY_ALIAS" ] && [ -n "$KEY_PASSWORD" ]; then
+            echo "Keystore secrets present -> will build a SIGNED RELEASE APK."
+            printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$GITHUB_WORKSPACE/release.keystore"
+            {
+              echo "storeFile=release.keystore"
+              echo "storePassword=$KEYSTORE_PASSWORD"
+              echo "keyAlias=$KEY_ALIAS"
+              echo "keyPassword=$KEY_PASSWORD"
+            } > "$GITHUB_WORKSPACE/keystore.properties"
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Keystore secrets absent -> will build a DEBUG APK (debug-signed, installable)."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build APK
+        id: build
+        run: |
+          if [ "${{ steps.signing.outputs.signed }}" = "true" ]; then
+            ./gradlew :app:assembleRelease --no-daemon --stacktrace
+            echo "apk_path=app/build/outputs/apk/release/app-release.apk" >> "$GITHUB_OUTPUT"
+            echo "variant=release-signed" >> "$GITHUB_OUTPUT"
+          else
+            ./gradlew :app:assembleDebug --no-daemon --stacktrace
+            echo "apk_path=app/build/outputs/apk/debug/app-debug.apk" >> "$GITHUB_OUTPUT"
+            echo "variant=debug" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Compute release label
+        id: label
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            LABEL="$GITHUB_REF_NAME"
+          else
+            LABEL="$(git rev-parse --short HEAD)"
+          fi
+          echo "label=$LABEL" >> "$GITHUB_OUTPUT"
+
+      - name: Stage named APK
+        id: stage
+        run: |
+          DEST="Prox5-${{ steps.label.outputs.label }}.apk"
+          cp "${{ steps.build.outputs.apk_path }}" "$DEST"
+          ls -la "$DEST"
+          echo "apk=$DEST" >> "$GITHUB_OUTPUT"
+
+      - name: Upload APK as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Prox5-${{ steps.label.outputs.label }}-${{ steps.build.outputs.variant }}
+          path: ${{ steps.stage.outputs.apk }}
+          if-no-files-found: error
+
+      - name: Create GitHub Release and attach APK (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.stage.outputs.apk }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          body: |
+            ### Prox5 ${{ steps.label.outputs.label }}
+
+            Download **`${{ steps.stage.outputs.apk }}`** below and sideload it onto your Android device
+            (Android 5.0+ / minSdk 21). You may need to allow installing from unknown sources.
+
+            Build variant: `${{ steps.build.outputs.variant }}`
+            (A `debug` variant means no release-signing secrets were configured — still installable,
+            but signatures differ per build. See `docs/RELEASING.md` for stable signing.)

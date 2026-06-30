@@ -34,9 +34,22 @@ Requires the Android SDK, JDK 17+, and Gradle.
 ./gradlew :app:assembleRelease    # app/build/outputs/apk/release/app-release.apk  (signed)
 ```
 
-Release signing reads from `keystore.properties` + a keystore (both git-ignored). See the build notes below.
+Release signing reads from `keystore.properties` + a keystore (both git-ignored). See
+[`docs/RELEASING.md`](docs/RELEASING.md) for generating a keystore and configuring CI signing.
 
-## Install & use
+## Install
+
+**Just want the app?** Grab the latest APK from the
+**[Releases page](https://github.com/nathanabrewer/Prox5/releases/latest)** — no cloning, no Gradle.
+Download `Prox5-<version>.apk` onto your Android device (5.0+), tap it, and allow installing from
+**unknown sources** if prompted. Then open Prox5 → (optionally set a username/password) → tap **Start**.
+
+> Releases are cut by CI ([`.github/workflows/release.yml`](.github/workflows/release.yml)). If the
+> repo has signing secrets configured the APK is release-signed; otherwise it's debug-signed (still
+> installable, but to update in place you must uninstall the old build first). See
+> [`docs/RELEASING.md`](docs/RELEASING.md).
+
+Prefer `adb`?
 
 ```bash
 adb install -r app/build/outputs/apk/release/app-release.apk
