@@ -70,15 +70,27 @@ jobs:
             echo "signed=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Compute version args (versionName from tag)
+        id: ver
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            VNAME="${GITHUB_REF_NAME#v}"
+          else
+            VNAME="0.1.0-dev+$(git rev-parse --short HEAD)"
+          fi
+          VCODE=$((100 + GITHUB_RUN_NUMBER))
+          echo "Using versionName=$VNAME versionCode=$VCODE"
+          echo "args=-PverName=$VNAME -PverCode=$VCODE" >> "$GITHUB_OUTPUT"
+
       - name: Build APK
         id: build
         run: |
           if [ "${{ steps.signing.outputs.signed }}" = "true" ]; then
-            ./gradlew :app:assembleRelease --no-daemon --stacktrace
+            ./gradlew :app:assembleRelease ${{ steps.ver.outputs.args }} --no-daemon --stacktrace
             echo "apk_path=app/build/outputs/apk/release/app-release.apk" >> "$GITHUB_OUTPUT"
             echo "variant=release-signed" >> "$GITHUB_OUTPUT"
           else
-            ./gradlew :app:assembleDebug --no-daemon --stacktrace
+            ./gradlew :app:assembleDebug ${{ steps.ver.outputs.args }} --no-daemon --stacktrace
             echo "apk_path=app/build/outputs/apk/debug/app-debug.apk" >> "$GITHUB_OUTPUT"
             echo "variant=debug" >> "$GITHUB_OUTPUT"
           fi

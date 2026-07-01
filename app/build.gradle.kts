@@ -29,8 +29,11 @@ android {
         applicationId = "org.dftz.androidproxy"
         minSdk = 21
         targetSdk = 35
-        versionCode = 3
-        versionName = "1.2"
+        // Version is derived from the release tag by CI (see .github/workflows/release.yml):
+        //   -PverName=<tag without leading v>, -PverCode=<monotonic build number>.
+        // Local/dev builds fall back to the values below.
+        versionCode = (project.findProperty("verCode") as String?)?.toInt() ?: 4
+        versionName = (project.findProperty("verName") as String?) ?: "0.1.0-dev"
     }
 
     buildTypes {
